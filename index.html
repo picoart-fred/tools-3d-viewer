@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>3D 文件查看器</title>
-    <link rel="stylesheet" href="./styles.css?v=20260617-regenerated" />
+    <link rel="stylesheet" href="./styles.css?v=20260617-mobile-file-picker" />
     <script type="importmap">
       {
         "imports": {
@@ -55,10 +55,10 @@
         </div>
 
         <label class="upload-zone" for="fileInput" id="dropZone">
-          <input id="fileInput" type="file" accept=".fbx,.glb,.gltf,.obj,.stl,.bin,.png,.jpg,.jpeg,.webp,.mtl" multiple />
+          <input id="fileInput" type="file" multiple />
           <span class="upload-icon" aria-hidden="true">+</span>
           <strong>选择或拖入 3D 文件</strong>
-          <small>OBJ 请同时选择 .mtl 和贴图文件</small>
+          <small>可选择模型、材质和贴图文件，页面会自动识别支持格式</small>
         </label>
 
         <section class="panel">
@@ -216,6 +216,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=20260617-regenerated"></script>
+    <script type="module" src="./app.js?v=20260617-mobile-file-picker"></script>
   </body>
 </html>
