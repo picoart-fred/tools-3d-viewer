@@ -35,15 +35,14 @@ const exposureSlider = document.querySelector("#exposureSlider");
 const backgroundSelect = document.querySelector("#backgroundSelect");
 const materialSelect = document.querySelector("#materialSelect");
 const modelColorSelect = document.querySelector("#modelColorSelect");
-const colorEffectSelect = document.querySelector("#colorEffectSelect");
 const tintColorInput = document.querySelector("#tintColorInput");
 const colorIntensitySlider = document.querySelector("#colorIntensitySlider");
-const exportFormatSelect = document.querySelector("#exportFormatSelect");
-const exportButton = document.querySelector("#exportButton");
 const selectedPartName = document.querySelector("#selectedPartName");
 const partColorInput = document.querySelector("#partColorInput");
 const applyPartColorButton = document.querySelector("#applyPartColorButton");
 const resetPartColorButton = document.querySelector("#resetPartColorButton");
+const exportFormatSelect = document.querySelector("#exportFormatSelect");
+const exportButton = document.querySelector("#exportButton");
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 5000);
@@ -56,48 +55,44 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = Number(exposureSlider.value);
 
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
-const environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environment = environment;
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
-const renderPass = new RenderPass(scene, camera);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.34, 0.38, 0.82);
-bloomPass.enabled = bloomToggle.checked;
-const outputPass = new OutputPass();
 const composer = new EffectComposer(renderer);
-composer.addPass(renderPass);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.36, 0.86);
+bloomPass.enabled = bloomToggle.checked;
+composer.addPass(new RenderPass(scene, camera));
 composer.addPass(bloomPass);
-composer.addPass(outputPass);
+composer.addPass(new OutputPass());
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.autoRotateSpeed = 1.4;
 
-const hemiLight = new THREE.HemisphereLight(0xf6fff4, 0x485041, 1.7);
+const hemiLight = new THREE.HemisphereLight(0xf6fff4, 0x485041, 1.4);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
 keyLight.position.set(5, 7, 5);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
 keyLight.shadow.bias = -0.0002;
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0x8fd6bf, 1.1);
+const fillLight = new THREE.DirectionalLight(0x8fd6bf, 0.9);
 fillLight.position.set(-5, 3, -4);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xc9e8ff, 1.25);
+const rimLight = new THREE.DirectionalLight(0xc9e8ff, 1.0);
 rimLight.position.set(-4, 5, 6);
 scene.add(rimLight);
 
 const grid = new THREE.GridHelper(10, 20, 0x8fd6bf, 0x555d4e);
-grid.position.y = -0.01;
 scene.add(grid);
 
 const shadowPlane = new THREE.Mesh(
   new THREE.PlaneGeometry(1, 1),
-  new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.34 })
+  new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.3 }),
 );
 shadowPlane.rotation.x = -Math.PI / 2;
 shadowPlane.receiveShadow = true;
@@ -114,22 +109,27 @@ scene.add(selectionBox);
 const urlByName = new Map();
 let currentModel = null;
 let currentObjectUrls = [];
-let currentOriginalMaterials = [];
+let originalMeshMaterials = [];
 let selectedMesh = null;
+
 const materialStates = new Map();
 const partColorOverrides = new Map();
 
 const renderMaterials = {
-  clay: new THREE.MeshStandardMaterial({
-    color: 0xd8d0c2,
-    roughness: 0.74,
-    metalness: 0.02,
+  matte: new THREE.MeshStandardMaterial({ color: 0xd8d0c2, roughness: 0.86, metalness: 0.02 }),
+  plastic: new THREE.MeshStandardMaterial({ color: 0xe8eef2, roughness: 0.38, metalness: 0.02 }),
+  ceramic: new THREE.MeshPhysicalMaterial({
+    color: 0xf4f1e8,
+    roughness: 0.18,
+    metalness: 0,
+    clearcoat: 0.72,
+    clearcoatRoughness: 0.18,
   }),
-  metal: new THREE.MeshStandardMaterial({
-    color: 0xb9c4ca,
-    roughness: 0.28,
-    metalness: 0.72,
-  }),
+  rubber: new THREE.MeshStandardMaterial({ color: 0x242629, roughness: 0.92, metalness: 0 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0xb9c4ca, roughness: 0.28, metalness: 0.72 }),
+  chrome: new THREE.MeshStandardMaterial({ color: 0xd7dde1, roughness: 0.08, metalness: 1 }),
+  goldMetal: new THREE.MeshStandardMaterial({ color: 0xf0c14b, roughness: 0.24, metalness: 0.86 }),
+  copper: new THREE.MeshStandardMaterial({ color: 0xb46a43, roughness: 0.32, metalness: 0.78 }),
   glass: new THREE.MeshPhysicalMaterial({
     color: 0xb8eef5,
     roughness: 0.08,
@@ -142,57 +142,16 @@ const renderMaterials = {
   }),
 };
 
-const colorEffects = {
-  natural: {
-    tint: "#8fd6bf",
-    sky: 0xf6fff4,
-    ground: 0x485041,
-    key: 0xffffff,
-    fill: 0x8fd6bf,
-    rim: 0xc9e8ff,
-    bloom: 0.34,
-    shadow: 0x000000,
-  },
-  neon: {
-    tint: "#00e5ff",
-    sky: 0xf3fbff,
-    ground: 0x161c33,
-    key: 0xffffff,
-    fill: 0x00e5ff,
-    rim: 0xff4fd8,
-    bloom: 0.68,
-    shadow: 0x07162a,
-  },
-  sunset: {
-    tint: "#ff9b45",
-    sky: 0xfff2d8,
-    ground: 0x4a2b28,
-    key: 0xfff1cf,
-    fill: 0xff8f4c,
-    rim: 0xffd166,
-    bloom: 0.42,
-    shadow: 0x2f1710,
-  },
-  arctic: {
-    tint: "#8bc7ff",
-    sky: 0xf2fbff,
-    ground: 0x243144,
-    key: 0xf8fdff,
-    fill: 0x7ab8ff,
-    rim: 0xcdf7ff,
-    bloom: 0.46,
-    shadow: 0x0d1826,
-  },
-  candy: {
-    tint: "#ff6bd6",
-    sky: 0xfff4fb,
-    ground: 0x3a2f4a,
-    key: 0xffffff,
-    fill: 0xff8ad8,
-    rim: 0x7cf4d3,
-    bloom: 0.58,
-    shadow: 0x20142c,
-  },
+const materialBaseColors = {
+  matte: new THREE.Color(0xd8d0c2),
+  plastic: new THREE.Color(0xe8eef2),
+  ceramic: new THREE.Color(0xf4f1e8),
+  rubber: new THREE.Color(0x242629),
+  metal: new THREE.Color(0xb9c4ca),
+  chrome: new THREE.Color(0xd7dde1),
+  goldMetal: new THREE.Color(0xf0c14b),
+  copper: new THREE.Color(0xb46a43),
+  glass: new THREE.Color(0xb8eef5),
 };
 
 const modelColorPresets = {
@@ -211,15 +170,14 @@ resizeRenderer();
 animate();
 
 fileInput.addEventListener("change", (event) => loadFiles([...event.target.files]));
+
 renderer.domElement.addEventListener("pointerdown", (event) => {
   pointerStart.set(event.clientX, event.clientY);
 });
 
 renderer.domElement.addEventListener("pointerup", (event) => {
   const dragDistance = pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
-  if (dragDistance <= 4) {
-    selectMeshAtPointer(event);
-  }
+  if (dragDistance <= 4) selectMeshAtPointer(event);
 });
 
 ["dragenter", "dragover"].forEach((eventName) => {
@@ -251,20 +209,16 @@ bloomToggle.addEventListener("change", () => {
   bloomPass.enabled = bloomToggle.checked;
 });
 
-wireframeToggle.addEventListener("change", () => {
-  setModelWireframe(wireframeToggle.checked);
-});
+wireframeToggle.addEventListener("change", () => setModelWireframe(wireframeToggle.checked));
 
 autoRotateToggle.addEventListener("change", () => {
   controls.autoRotate = autoRotateToggle.checked;
 });
 
 scaleSlider.addEventListener("input", () => {
-  if (currentModel) {
-    const value = Number(scaleSlider.value);
-    currentModel.scale.setScalar(value);
-    updateSceneBounds();
-  }
+  if (!currentModel) return;
+  currentModel.scale.setScalar(Number(scaleSlider.value));
+  updateSceneBounds();
 });
 
 exposureSlider.addEventListener("input", () => {
@@ -276,41 +230,31 @@ backgroundSelect.addEventListener("change", () => {
   viewer.classList.toggle("paper", backgroundSelect.value === "paper");
 });
 
-materialSelect.addEventListener("change", () => {
-  applyMaterialMode(materialSelect.value);
-});
+materialSelect.addEventListener("change", applyAppearance);
 
 modelColorSelect.addEventListener("change", () => {
   const presetColor = modelColorPresets[modelColorSelect.value];
-  if (presetColor) {
-    tintColorInput.value = presetColor;
-  }
-  applyColorEffect();
-});
-
-colorEffectSelect.addEventListener("change", () => {
-  const effect = colorEffects[colorEffectSelect.value] || colorEffects.natural;
-  tintColorInput.value = effect.tint;
-  applyColorEffect();
+  if (presetColor) tintColorInput.value = presetColor;
+  applyAppearance();
 });
 
 tintColorInput.addEventListener("input", () => {
-  if (modelColorSelect.value !== "original") {
-    modelColorSelect.value = "custom";
-  }
-  applyColorEffect();
+  if (modelColorSelect.value !== "original") modelColorSelect.value = "custom";
+  applyAppearance();
 });
-colorIntensitySlider.addEventListener("input", applyColorEffect);
+
+colorIntensitySlider.addEventListener("input", applyAppearance);
 
 document.querySelector("#resetViewButton").addEventListener("click", () => focusModel());
 document.querySelector("#frontViewButton").addEventListener("click", () => setView("front"));
+document.querySelector("#backViewButton").addEventListener("click", () => setView("back"));
 document.querySelector("#topViewButton").addEventListener("click", () => setView("top"));
-document.querySelector("#sideViewButton").addEventListener("click", () => setView("side"));
-exportButton.addEventListener("click", () => exportCurrentModel());
-applyPartColorButton.addEventListener("click", () => applySelectedPartColor());
-resetPartColorButton.addEventListener("click", () => resetSelectedPartColor());
-
-applyColorEffect();
+document.querySelector("#bottomViewButton").addEventListener("click", () => setView("bottom"));
+document.querySelector("#rightViewButton").addEventListener("click", () => setView("right"));
+document.querySelector("#leftViewButton").addEventListener("click", () => setView("left"));
+applyPartColorButton.addEventListener("click", applySelectedPartColor);
+resetPartColorButton.addEventListener("click", resetSelectedPartColor);
+exportButton.addEventListener("click", exportCurrentModel);
 
 async function loadFiles(files) {
   const modelFile = files.find((file) => /\.(fbx|glb|gltf|obj|stl)$/i.test(file.name));
@@ -347,16 +291,13 @@ async function parseModel(file, extension) {
   });
 
   if (extension === "fbx") {
-    const loader = new FBXLoader(manager);
-    return loader.parse(await file.arrayBuffer(), "");
+    return new FBXLoader(manager).parse(await file.arrayBuffer(), "");
   }
 
   if (extension === "glb" || extension === "gltf") {
     const loader = new GLTFLoader(manager);
     const source = extension === "glb" ? await file.arrayBuffer() : await file.text();
-    const result = await new Promise((resolve, reject) => {
-      loader.parse(source, "", resolve, reject);
-    });
+    const result = await new Promise((resolve, reject) => loader.parse(source, "", resolve, reject));
     return result.scene;
   }
 
@@ -373,9 +314,8 @@ async function parseModel(file, extension) {
   }
 
   if (extension === "stl") {
-    const loader = new STLLoader(manager);
-    const geometry = loader.parse(await file.arrayBuffer());
-    const material = new THREE.MeshStandardMaterial({ color: 0x8fd6bf, roughness: 0.58, metalness: 0.08 });
+    const geometry = new STLLoader(manager).parse(await file.arrayBuffer());
+    const material = new THREE.MeshStandardMaterial({ color: 0xd8d0c2, roughness: 0.7, metalness: 0.02 });
     return new THREE.Mesh(geometry, material);
   }
 
@@ -385,49 +325,41 @@ async function parseModel(file, extension) {
 function showModel(model, file, extension) {
   clearModel();
   currentModel = model;
-  currentOriginalMaterials = [];
+  originalMeshMaterials = [];
+
   currentModel.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-      if (child.geometry && !child.geometry.attributes.normal) {
-        child.geometry.computeVertexNormals();
-      }
-      if (!child.material) {
-        child.material = new THREE.MeshStandardMaterial({ color: 0x8fd6bf });
-      }
-      configureImportedMaterials(child.material);
-      currentOriginalMaterials.push({ mesh: child, material: child.material });
-    }
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    if (child.geometry && !child.geometry.attributes.normal) child.geometry.computeVertexNormals();
+    if (!child.material) child.material = new THREE.MeshStandardMaterial({ color: 0xd8d0c2 });
+    rememberMaterials(child.material);
+    originalMeshMaterials.push({ mesh: child, material: child.material });
   });
 
   scene.add(currentModel);
+  exportButton.disabled = false;
   scaleSlider.value = "1";
   wireframeToggle.checked = false;
-  exportButton.disabled = false;
-  applyMaterialMode(materialSelect.value);
   emptyState.classList.add("is-hidden");
   sceneTitle.textContent = file.name;
   fileName.textContent = file.name;
   fileType.textContent = extension.toUpperCase();
+  applyAppearance();
   updateStats(currentModel);
   focusModel();
-  setStatus("加载完成，已启用渲染增强");
+  setStatus("加载完成");
 }
 
 function clearModel() {
   if (!currentModel) return;
-  const originalMaterialSet = new Set(currentOriginalMaterials.map(({ material }) => material));
   scene.remove(currentModel);
   currentModel.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      disposeMaterials(child.material);
-    }
+    if (child.material) disposeMaterials(child.material);
   });
-  originalMaterialSet.forEach((material) => disposeMaterials(material));
   currentModel = null;
-  currentOriginalMaterials = [];
+  originalMeshMaterials = [];
   selectedMesh = null;
   materialStates.clear();
   partColorOverrides.clear();
@@ -435,20 +367,25 @@ function clearModel() {
   selectedPartName.textContent = "未选择";
   applyPartColorButton.disabled = true;
   resetPartColorButton.disabled = true;
-  shadowPlane.visible = false;
   exportButton.disabled = true;
+  shadowPlane.visible = false;
 }
 
-function configureImportedMaterials(materialOrMaterials) {
+function rememberMaterials(materialOrMaterials) {
   const materials = Array.isArray(materialOrMaterials) ? materialOrMaterials : [materialOrMaterials];
   materials.forEach((material) => {
-    if (!material) return;
-    rememberMaterialState(material);
-    ["map", "emissiveMap", "roughnessMap", "metalnessMap", "normalMap", "aoMap"].forEach((key) => {
-      if (material[key] && key === "map") {
-        material[key].colorSpace = THREE.SRGBColorSpace;
-      }
+    if (!material || materialStates.has(material)) return;
+    materialStates.set(material, {
+      color: material.color ? material.color.clone() : null,
+      emissive: material.emissive ? material.emissive.clone() : null,
+      emissiveIntensity: material.emissiveIntensity,
+      map: "map" in material ? material.map : undefined,
+      roughness: material.roughness,
+      metalness: material.metalness,
+      opacity: material.opacity,
+      transparent: material.transparent,
     });
+    if (material.map) material.map.colorSpace = THREE.SRGBColorSpace;
     material.needsUpdate = true;
   });
 }
@@ -461,26 +398,101 @@ function disposeMaterials(materialOrMaterials) {
   });
 }
 
-function rememberMaterialState(material) {
-  if (materialStates.has(material)) return;
-  materialStates.set(material, {
-    color: material.color ? material.color.clone() : null,
-    emissive: material.emissive ? material.emissive.clone() : null,
-    map: "map" in material ? material.map : undefined,
-    opacity: material.opacity,
+function applyAppearance() {
+  if (!currentModel) return;
+  const materialMode = materialSelect.value;
+  const modelColor = getModelColorOverride();
+  const tintColor = new THREE.Color(tintColorInput.value);
+  const intensity = Number(colorIntensitySlider.value);
+
+  originalMeshMaterials.forEach(({ mesh, material }) => {
+    mesh.material = materialMode === "original" ? material : renderMaterials[materialMode];
+  });
+
+  if (materialMode === "original") {
+    if (modelColor) {
+      paintOriginalMaterials(modelColor);
+    } else {
+      restoreOriginalMaterials();
+      tintOriginalMaterials(tintColor, intensity);
+    }
+  } else {
+    tintRenderMaterial(renderMaterials[materialMode], modelColor || tintColor, modelColor ? 1 : intensity);
+  }
+
+  applyPartColorOverrides();
+  setModelWireframe(wireframeToggle.checked);
+}
+
+function getModelColorOverride() {
+  if (modelColorSelect.value === "original") return null;
+  return new THREE.Color(modelColorPresets[modelColorSelect.value] || tintColorInput.value);
+}
+
+function restoreOriginalMaterials() {
+  const seen = new Set();
+  originalMeshMaterials.forEach(({ material }) => {
+    const materials = Array.isArray(material) ? material : [material];
+    materials.forEach((item) => {
+      if (!item || seen.has(item)) return;
+      seen.add(item);
+      const state = materialStates.get(item);
+      if (!state) return;
+      if (item.color && state.color) item.color.copy(state.color);
+      if (item.emissive && state.emissive) item.emissive.copy(state.emissive);
+      if ("emissiveIntensity" in item) item.emissiveIntensity = state.emissiveIntensity || 0;
+      if ("map" in item) item.map = state.map;
+      if ("roughness" in item) item.roughness = state.roughness;
+      if ("metalness" in item) item.metalness = state.metalness;
+      if ("opacity" in item) item.opacity = state.opacity;
+      if ("transparent" in item) item.transparent = state.transparent;
+      item.needsUpdate = true;
+    });
   });
 }
 
-function applyMaterialMode(mode) {
-  if (!currentModel) return;
-  const renderMaterial = renderMaterials[mode];
-
-  currentOriginalMaterials.forEach(({ mesh, material }) => {
-    mesh.material = mode === "original" || !renderMaterial ? material : renderMaterial;
+function tintOriginalMaterials(tintColor, intensity) {
+  if (intensity <= 0) return;
+  const seen = new Set();
+  originalMeshMaterials.forEach(({ material }) => {
+    const materials = Array.isArray(material) ? material : [material];
+    materials.forEach((item) => {
+      if (!item || seen.has(item)) return;
+      seen.add(item);
+      const state = materialStates.get(item);
+      if (item.color && state?.color) item.color.copy(state.color).lerp(tintColor, intensity * 0.65);
+      item.needsUpdate = true;
+    });
   });
+}
 
-  applyColorEffect();
-  setModelWireframe(wireframeToggle.checked);
+function paintOriginalMaterials(color) {
+  const seen = new Set();
+  originalMeshMaterials.forEach(({ material }) => {
+    const materials = Array.isArray(material) ? material : [material];
+    materials.forEach((item) => {
+      if (!item || seen.has(item)) return;
+      seen.add(item);
+      if (item.color) item.color.copy(color);
+      if ("map" in item) item.map = null;
+      if (item.emissive) {
+        item.emissive.copy(color).multiplyScalar(0.1);
+        item.emissiveIntensity = 0.25;
+      }
+      item.needsUpdate = true;
+    });
+  });
+}
+
+function tintRenderMaterial(material, color, intensity) {
+  if (!material) return;
+  const base = materialBaseColors[materialSelect.value] || new THREE.Color(0xd8d0c2);
+  material.color.copy(base).lerp(color, intensity);
+  if (material.emissive) {
+    material.emissive.copy(color).multiplyScalar(intensity * 0.14);
+    material.emissiveIntensity = intensity * 0.45;
+  }
+  material.needsUpdate = true;
 }
 
 function setModelWireframe(enabled) {
@@ -489,9 +501,7 @@ function setModelWireframe(enabled) {
     if (!child.isMesh || !child.material) return;
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     materials.forEach((material) => {
-      if ("wireframe" in material) {
-        material.wireframe = enabled;
-      }
+      if ("wireframe" in material) material.wireframe = enabled;
     });
   });
 }
@@ -507,23 +517,16 @@ function selectMeshAtPointer(event) {
   currentModel.traverse((child) => {
     if (child.isMesh) meshes.push(child);
   });
-
   const hits = raycaster.intersectObjects(meshes, false);
-  if (!hits.length) {
-    setSelectedMesh(null);
-    return;
-  }
-
-  setSelectedMesh(hits[0].object);
+  setSelectedMesh(hits.length ? hits[0].object : null);
 }
 
 function setSelectedMesh(mesh) {
   selectedMesh = mesh;
   selectionBox.visible = Boolean(mesh);
+  selectedPartName.textContent = mesh ? getMeshDisplayName(mesh) : "未选择";
   applyPartColorButton.disabled = !mesh;
   resetPartColorButton.disabled = !mesh;
-  selectedPartName.textContent = mesh ? getMeshDisplayName(mesh) : "未选择";
-
   if (mesh) {
     selectionBox.setFromObject(mesh);
     setStatus(`已选中：${getMeshDisplayName(mesh)}`);
@@ -531,8 +534,7 @@ function setSelectedMesh(mesh) {
 }
 
 function getMeshDisplayName(mesh) {
-  if (!mesh) return "未选择";
-  return mesh.name || mesh.parent?.name || `部件 ${mesh.id}`;
+  return mesh?.name || mesh?.parent?.name || `部件 ${mesh?.id || ""}`;
 }
 
 function applySelectedPartColor() {
@@ -547,51 +549,39 @@ function applySelectedPartColor() {
 function resetSelectedPartColor() {
   if (!selectedMesh) return;
   partColorOverrides.delete(selectedMesh);
-  applyMaterialMode(materialSelect.value);
+  applyAppearance();
   selectionBox.setFromObject(selectedMesh);
   setStatus(`已恢复部件颜色：${getMeshDisplayName(selectedMesh)}`);
 }
 
 function applyPartColorOverrides() {
   partColorOverrides.forEach((color, mesh) => {
-    if (mesh.parent) {
-      paintMesh(mesh, new THREE.Color(color));
-    }
+    if (mesh.parent) paintMesh(mesh, new THREE.Color(color));
   });
 }
 
 function paintMesh(mesh, color) {
-  if (!hasLocalPartMaterial(mesh.material)) {
-    mesh.material = cloneMaterialForMesh(mesh.material);
-  }
+  if (!hasLocalPartMaterial(mesh.material)) mesh.material = cloneMaterialForMesh(mesh.material);
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-
   materials.forEach((material) => {
-    rememberMaterialState(material);
-    if (material.color) {
-      material.color.copy(color);
-    }
-    if ("map" in material) {
-      material.map = null;
-    }
+    rememberMaterials(material);
+    if (material.color) material.color.copy(color);
+    if ("map" in material) material.map = null;
     if (material.emissive) {
       material.emissive.copy(color).multiplyScalar(0.1);
       material.emissiveIntensity = 0.25;
     }
     material.needsUpdate = true;
   });
-
   setModelWireframe(wireframeToggle.checked);
 }
 
 function cloneMaterialForMesh(materialOrMaterials) {
-  if (Array.isArray(materialOrMaterials)) {
-    return materialOrMaterials.map((material) => markLocalPartMaterial(material.clone()));
-  }
-  return markLocalPartMaterial(materialOrMaterials.clone());
+  if (Array.isArray(materialOrMaterials)) return materialOrMaterials.map((material) => markLocalMaterial(material.clone()));
+  return markLocalMaterial(materialOrMaterials.clone());
 }
 
-function markLocalPartMaterial(material) {
+function markLocalMaterial(material) {
   material.userData.localPartMaterial = true;
   return material;
 }
@@ -599,135 +589,6 @@ function markLocalPartMaterial(material) {
 function hasLocalPartMaterial(materialOrMaterials) {
   const materials = Array.isArray(materialOrMaterials) ? materialOrMaterials : [materialOrMaterials];
   return materials.every((material) => material?.userData.localPartMaterial);
-}
-
-function applyColorEffect() {
-  const effect = colorEffects[colorEffectSelect.value] || colorEffects.natural;
-  const tintColor = new THREE.Color(tintColorInput.value || effect.tint);
-  const intensity = Number(colorIntensitySlider.value);
-  const materialMode = materialSelect.value;
-  const modelColor = getModelColorOverride(tintColor);
-
-  hemiLight.color.set(effect.sky).lerp(tintColor, intensity * 0.18);
-  hemiLight.groundColor.set(effect.ground).lerp(tintColor, intensity * 0.12);
-  keyLight.color.set(effect.key).lerp(tintColor, intensity * 0.14);
-  fillLight.color.set(effect.fill).lerp(tintColor, intensity * 0.46);
-  rimLight.color.set(effect.rim).lerp(tintColor, intensity * 0.58);
-  shadowPlane.material.color.set(effect.shadow).lerp(tintColor, intensity * 0.18);
-  shadowPlane.material.opacity = 0.26 + intensity * 0.14;
-  shadowPlane.material.needsUpdate = true;
-  bloomPass.strength = effect.bloom + intensity * 0.18;
-
-  if (materialMode === "original") {
-    if (modelColor) {
-      paintOriginalMaterials(modelColor);
-    } else {
-      restoreOriginalMaterials();
-    }
-  } else {
-    tintRenderMaterial(renderMaterials[materialMode], modelColor || tintColor, modelColor ? 1 : intensity);
-  }
-
-  const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
-  gridMaterials.forEach((material) => {
-    material.color.set(effect.fill).lerp(tintColor, intensity * 0.5);
-    material.opacity = 0.55 + intensity * 0.25;
-    material.transparent = true;
-    material.needsUpdate = true;
-  });
-
-  applyPartColorOverrides();
-}
-
-function getModelColorOverride(tintColor) {
-  if (modelColorSelect.value === "original") return null;
-  const presetColor = modelColorPresets[modelColorSelect.value];
-  return new THREE.Color(presetColor || tintColor);
-}
-
-function restoreOriginalMaterials() {
-  const seenMaterials = new Set();
-
-  currentOriginalMaterials.forEach(({ material }) => {
-    const materials = Array.isArray(material) ? material : [material];
-    materials.forEach((item) => {
-      if (!item || seenMaterials.has(item)) return;
-      seenMaterials.add(item);
-      const state = materialStates.get(item);
-      if (!state) return;
-
-      if (item.color && state.color) {
-        item.color.copy(state.color);
-      }
-
-      if ("map" in item) {
-        item.map = state.map;
-      }
-
-      if (item.emissive && state.emissive) {
-        item.emissive.copy(state.emissive);
-        item.emissiveIntensity = 0;
-      }
-
-      if ("opacity" in item && typeof state.opacity === "number") {
-        item.opacity = state.opacity;
-      }
-
-      item.needsUpdate = true;
-    });
-  });
-}
-
-function paintOriginalMaterials(modelColor) {
-  const seenMaterials = new Set();
-
-  currentOriginalMaterials.forEach(({ material }) => {
-    const materials = Array.isArray(material) ? material : [material];
-    materials.forEach((item) => {
-      if (!item || seenMaterials.has(item)) return;
-      seenMaterials.add(item);
-      const state = materialStates.get(item);
-      if (!state) return;
-
-      if (item.color) {
-        item.color.copy(modelColor);
-      }
-
-      if ("map" in item) {
-        item.map = null;
-      }
-
-      if (item.emissive) {
-        item.emissive.copy(modelColor).multiplyScalar(0.12);
-        item.emissiveIntensity = 0.28;
-      }
-
-      if ("opacity" in item && typeof state.opacity === "number") {
-        item.opacity = state.opacity;
-      }
-
-      item.needsUpdate = true;
-    });
-  });
-}
-
-function tintRenderMaterial(material, tintColor, intensity) {
-  if (!material) return;
-  const baseColors = {
-    clay: new THREE.Color(0xd8d0c2),
-    metal: new THREE.Color(0xb9c4ca),
-    glass: new THREE.Color(0xb8eef5),
-  };
-  const baseColor = baseColors[materialSelect.value] || new THREE.Color(0x8fd6bf);
-
-  material.color.copy(baseColor).lerp(tintColor, intensity);
-
-  if (material.emissive) {
-    material.emissive.copy(tintColor).multiplyScalar(intensity * 0.18);
-    material.emissiveIntensity = intensity * 0.55;
-  }
-
-  material.needsUpdate = true;
 }
 
 async function exportCurrentModel() {
@@ -743,44 +604,29 @@ async function exportCurrentModel() {
   try {
     if (format === "glb" || format === "gltf") {
       const binary = format === "glb";
-      const result = await exportGltf(binary);
+      const result = await new Promise((resolve, reject) => {
+        new GLTFExporter().parse(currentModel, resolve, reject, {
+          binary,
+          embedImages: true,
+          onlyVisible: false,
+          truncateDrawRange: true,
+        });
+      });
       if (binary) {
         downloadBlob(result, `${baseName}.glb`, "model/gltf-binary");
       } else {
-        const text = JSON.stringify(result, null, 2);
-        downloadBlob(text, `${baseName}.gltf`, "model/gltf+json");
+        downloadBlob(JSON.stringify(result, null, 2), `${baseName}.gltf`, "model/gltf+json");
       }
     } else if (format === "obj") {
-      const text = new OBJExporter().parse(currentModel);
-      downloadBlob(text, `${baseName}.obj`, "text/plain");
+      downloadBlob(new OBJExporter().parse(currentModel), `${baseName}.obj`, "text/plain");
     } else if (format === "stl") {
-      const text = new STLExporter().parse(currentModel, { binary: false });
-      downloadBlob(text, `${baseName}.stl`, "model/stl");
-    } else {
-      throw new Error("暂不支持该导出格式");
+      downloadBlob(new STLExporter().parse(currentModel, { binary: false }), `${baseName}.stl`, "model/stl");
     }
-
     setStatus(`已导出 ${format.toUpperCase()}`);
   } catch (error) {
     console.error(error);
     setStatus(`导出失败：${error.message || "无法转换该模型"}`, true);
   }
-}
-
-function exportGltf(binary) {
-  return new Promise((resolve, reject) => {
-    new GLTFExporter().parse(
-      currentModel,
-      resolve,
-      reject,
-      {
-        binary,
-        embedImages: true,
-        onlyVisible: false,
-        truncateDrawRange: true,
-      }
-    );
-  });
 }
 
 function getExportBaseName(name) {
@@ -792,7 +638,6 @@ function downloadBlob(content, downloadName, type) {
   const blob = content instanceof Blob ? content : new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-
   link.href = url;
   link.download = downloadName;
   document.body.appendChild(link);
@@ -819,6 +664,7 @@ function updateStats(model) {
 function focusModel() {
   if (!currentModel) {
     camera.position.set(3.2, 2.4, 4.4);
+    camera.up.set(0, 1, 0);
     controls.target.set(0, 0, 0);
     controls.update();
     return;
@@ -836,6 +682,7 @@ function focusModel() {
   camera.far = distance * 1000;
   camera.updateProjectionMatrix();
   camera.position.copy(center).add(new THREE.Vector3(distance * 0.8, distance * 0.6, distance * 1.1));
+  camera.up.set(0, 1, 0);
   controls.update();
 }
 
@@ -844,29 +691,21 @@ function setView(direction) {
   const distance = camera.position.distanceTo(target) || 5;
   const positions = {
     front: new THREE.Vector3(0, 0, distance),
-    top: new THREE.Vector3(0, distance, 0.001),
-    side: new THREE.Vector3(distance, 0, 0),
+    back: new THREE.Vector3(0, 0, -distance),
+    top: new THREE.Vector3(0, distance, 0),
+    bottom: new THREE.Vector3(0, -distance, 0),
+    right: new THREE.Vector3(distance, 0, 0),
+    left: new THREE.Vector3(-distance, 0, 0),
   };
   camera.position.copy(target).add(positions[direction]);
-  controls.update();
-}
-
-function resizeRenderer() {
-  const { clientWidth, clientHeight } = viewer;
-  renderer.setSize(clientWidth, clientHeight, false);
-  composer.setSize(clientWidth, clientHeight);
-  bloomPass.resolution.set(clientWidth, clientHeight);
-  camera.aspect = clientWidth / Math.max(clientHeight, 1);
-  camera.updateProjectionMatrix();
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  if (selectedMesh && selectionBox.visible) {
-    selectionBox.setFromObject(selectedMesh);
+  if (direction === "top") {
+    camera.up.set(0, 0, -1);
+  } else if (direction === "bottom") {
+    camera.up.set(0, 0, 1);
+  } else {
+    camera.up.set(0, 1, 0);
   }
-  composer.render();
+  controls.update();
 }
 
 function updateSceneBounds(existingBox, existingCenter, existingMaxSize) {
@@ -875,14 +714,13 @@ function updateSceneBounds(existingBox, existingCenter, existingMaxSize) {
   const center = existingCenter || box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const maxSize = existingMaxSize || Math.max(size.x, size.y, size.z) || 1;
-  const shadowSize = Math.max(maxSize * 2.8, 1.5);
   const floorY = box.min.y - maxSize * 0.012;
+  const shadowSize = Math.max(maxSize * 2.8, 1.5);
   const shadowCameraSize = maxSize * 2.6;
 
   shadowPlane.position.set(center.x, floorY, center.z);
   shadowPlane.scale.set(shadowSize, shadowSize, 1);
   shadowPlane.visible = shadowToggle.checked;
-
   grid.position.set(center.x, floorY + maxSize * 0.002, center.z);
   grid.scale.setScalar(Math.max(maxSize / 4, 0.6));
 
@@ -899,6 +737,22 @@ function updateSceneBounds(existingBox, existingCenter, existingMaxSize) {
 
   fillLight.position.copy(center).add(new THREE.Vector3(-maxSize * 1.6, maxSize * 1.1, -maxSize * 1.2));
   rimLight.position.copy(center).add(new THREE.Vector3(-maxSize * 1.2, maxSize * 1.8, maxSize * 1.7));
+}
+
+function resizeRenderer() {
+  const { clientWidth, clientHeight } = viewer;
+  renderer.setSize(clientWidth, clientHeight, false);
+  composer.setSize(clientWidth, clientHeight);
+  bloomPass.resolution.set(clientWidth, clientHeight);
+  camera.aspect = clientWidth / Math.max(clientHeight, 1);
+  camera.updateProjectionMatrix();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  if (selectedMesh && selectionBox.visible) selectionBox.setFromObject(selectedMesh);
+  composer.render();
 }
 
 function setStatus(message, isError = false) {

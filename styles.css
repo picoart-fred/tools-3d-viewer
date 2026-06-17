@@ -77,7 +77,9 @@ h1 {
 .brand p,
 .empty-state p,
 .upload-zone small,
-#statusText {
+#statusText,
+.selected-part span,
+.hint {
   color: var(--muted);
 }
 
@@ -134,7 +136,8 @@ h1 {
   color: var(--accent-strong);
 }
 
-.stats {
+.stats,
+.controls {
   display: grid;
   gap: 12px;
   margin: 0;
@@ -148,7 +151,8 @@ h1 {
   gap: 12px;
 }
 
-.stats dt {
+.stats dt,
+.controls label span {
   color: var(--muted);
   font-size: 13px;
 }
@@ -160,27 +164,13 @@ h1 {
   text-align: right;
 }
 
-.controls {
-  display: grid;
-  gap: 14px;
-}
-
-.controls label span {
-  color: var(--muted);
-}
-
 .selected-part {
   display: grid;
   gap: 4px;
 }
 
-.selected-part span,
+.selected-part strong,
 .hint {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.selected-part strong {
   overflow-wrap: anywhere;
   font-size: 13px;
 }
@@ -227,9 +217,16 @@ button:hover {
   border-color: var(--accent);
 }
 
-#resetViewButton {
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+#resetViewButton,
+#exportButton,
+#applyPartColorButton,
+#resetPartColorButton {
   width: 100%;
-  margin-top: 4px;
 }
 
 .viewer {
@@ -289,6 +286,8 @@ button:hover {
 .view-actions {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
