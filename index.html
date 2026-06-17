@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D 文件查看器</title>
+    <link rel="stylesheet" href="./styles.css?v=20260617-part-color" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+      }
+    </script>
+    <script>
+      function showStartupError(message) {
+        const status = document.querySelector("#statusText");
+        if (status) {
+          status.textContent = message;
+          status.style.color = "var(--danger)";
+        }
+      }
+
+      if (location.protocol === "file:") {
+        window.addEventListener("DOMContentLoaded", () => {
+          showStartupError("请通过 start-server 打开本地服务，不要直接双击 index.html");
+        });
+      }
+
+      window.addEventListener("error", (event) => {
+        const message = String(event.message || "");
+        const source = String(event.filename || "");
+        const targetSource = String(event.target && event.target.src ? event.target.src : "");
+
+        if (
+          message.includes("module") ||
+          source.includes("cdn.jsdelivr.net") ||
+          targetSource.includes("cdn.jsdelivr.net")
+        ) {
+          showStartupError("依赖加载失败，请确认浏览器可以访问 cdn.jsdelivr.net");
+        }
+      });
+
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = String(event.reason && (event.reason.message || event.reason) || "");
+        if (reason.includes("cdn.jsdelivr.net") || reason.includes("Failed to fetch")) {
+          showStartupError("依赖加载失败，请确认浏览器可以访问 cdn.jsdelivr.net");
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="查看器控制面板">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">3D</div>
+          <div>
+            <h1>3D 文件查看器</h1>
+            <p>FBX / GLB / GLTF / OBJ / STL</p>
+          </div>
+        </div>
+
+        <label class="upload-zone" for="fileInput" id="dropZone">
+          <input id="fileInput" type="file" accept=".fbx,.glb,.gltf,.obj,.stl,.bin,.png,.jpg,.jpeg,.webp,.mtl" multiple />
+          <span class="upload-icon" aria-hidden="true">+</span>
+          <strong>选择或拖入 3D 文件</strong>
+          <small>支持带贴图/材质文件一起选择</small>
+        </label>
+
+        <section class="panel">
+          <h2>模型信息</h2>
+          <dl class="stats">
+            <div>
+              <dt>文件</dt>
+              <dd id="fileName">未加载</dd>
+            </div>
+            <div>
+              <dt>格式</dt>
+              <dd id="fileType">-</dd>
+            </div>
+            <div>
+              <dt>网格</dt>
+              <dd id="meshCount">0</dd>
+            </div>
+            <div>
+              <dt>面数</dt>
+              <dd id="faceCount">0</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel controls">
+          <h2>显示</h2>
+          <label>
+            <span>背景</span>
+            <select id="backgroundSelect">
+              <option value="studio">工作室</option>
+              <option value="graphite">石墨</option>
+              <option value="paper">浅色</option>
+            </select>
+          </label>
+          <label>
+            <span>材质</span>
+            <select id="materialSelect">
+              <option value="original">原材质</option>
+              <option value="clay">陶土</option>
+              <option value="metal">金属</option>
+              <option value="glass">半透明</option>
+            </select>
+          </label>
+          <label>
+            <span>模型颜色</span>
+            <select id="modelColorSelect">
+              <option value="original">原本颜色</option>
+              <option value="white">白色</option>
+              <option value="purple">紫色</option>
+              <option value="blue">蓝色</option>
+              <option value="green">绿色</option>
+              <option value="red">红色</option>
+              <option value="gold">金色</option>
+              <option value="black">黑色</option>
+              <option value="custom">自定义主色</option>
+            </select>
+          </label>
+          <label>
+            <span>色彩风格</span>
+            <select id="colorEffectSelect">
+              <option value="natural">自然</option>
+              <option value="neon">霓虹</option>
+              <option value="sunset">暖阳</option>
+              <option value="arctic">冷光</option>
+              <option value="candy">糖果</option>
+            </select>
+          </label>
+          <label>
+            <span>主色</span>
+            <input id="tintColorInput" type="color" value="#8fd6bf" />
+          </label>
+          <label>
+            <span>色彩强度</span>
+            <input id="colorIntensitySlider" type="range" min="0" max="1" step="0.05" value="0.45" />
+          </label>
+          <label>
+            <span>网格</span>
+            <input id="gridToggle" type="checkbox" checked />
+          </label>
+          <label>
+            <span>软阴影</span>
+            <input id="shadowToggle" type="checkbox" checked />
+          </label>
+          <label>
+            <span>辉光</span>
+            <input id="bloomToggle" type="checkbox" checked />
+          </label>
+          <label>
+            <span>线框</span>
+            <input id="wireframeToggle" type="checkbox" />
+          </label>
+          <label>
+            <span>自动旋转</span>
+            <input id="autoRotateToggle" type="checkbox" />
+          </label>
+          <label>
+            <span>曝光</span>
+            <input id="exposureSlider" type="range" min="0.7" max="1.8" step="0.05" value="1.15" />
+          </label>
+          <label>
+            <span>缩放</span>
+            <input id="scaleSlider" type="range" min="0.1" max="3" step="0.05" value="1" />
+          </label>
+          <button id="resetViewButton" type="button">重置视图</button>
+        </section>
+
+        <section class="panel controls">
+          <h2>转换</h2>
+          <label>
+            <span>导出格式</span>
+            <select id="exportFormatSelect">
+              <option value="glb">GLB</option>
+              <option value="gltf">GLTF</option>
+              <option value="obj">OBJ</option>
+              <option value="stl">STL</option>
+            </select>
+          </label>
+          <button id="exportButton" type="button" disabled>导出当前模型</button>
+          <small class="hint">GLB/GLTF 更适合保留材质颜色。</small>
+        </section>
+
+        <section class="panel controls">
+          <h2>局部颜色</h2>
+          <div class="selected-part">
+            <span>选中部件</span>
+            <strong id="selectedPartName">未选择</strong>
+          </div>
+          <label>
+            <span>部件颜色</span>
+            <input id="partColorInput" type="color" value="#8a5cf6" />
+          </label>
+          <button id="applyPartColorButton" type="button" disabled>应用到选中部件</button>
+          <button id="resetPartColorButton" type="button" disabled>恢复该部件颜色</button>
+          <small class="hint">在模型上单击一个小模块后再改色。</small>
+        </section>
+      </aside>
+
+      <section class="viewer">
+        <div class="topbar">
+          <div>
+            <strong id="sceneTitle">准备加载模型</strong>
+            <span id="statusText">将 FBX 等文件拖入窗口即可查看</span>
+          </div>
+          <div class="view-actions">
+            <button id="frontViewButton" type="button" title="正视图">前</button>
+            <button id="topViewButton" type="button" title="俯视图">上</button>
+            <button id="sideViewButton" type="button" title="侧视图">侧</button>
+          </div>
+        </div>
+        <canvas id="viewerCanvas" aria-label="3D 模型查看画布"></canvas>
+        <div class="empty-state" id="emptyState">
+          <div class="empty-cube" aria-hidden="true"></div>
+          <h2>拖入模型开始查看</h2>
+          <p>鼠标左键旋转，滚轮缩放，右键平移。</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js?v=20260617-part-color"></script>
+  </body>
+</html>
